@@ -550,161 +550,6 @@ class BasePlayer(BotAI):
                 prompt_enemy += f"coordinate {mineral} has {len(self.enemy_location_minerals[mineral])} enemy's structures; "
         
         return prompt_scout + prompt_scouted + prompt_enemy
-    
-# 记录所有我方和敌方的单位/建筑的名称、Tag和ID
-    def _record_entity_ids(self):
-        """
-        将所有(包括已死亡)我方和敌方的单位/建筑的名称、Tag、ID、new_id 和
-        存活状态 (is_alive) 记录到 self.entity_id_name 变量中。
-
-        同时，将此信息保存到 log_path/entity_id_name/ 文件夹下，
-        并以当前帧数 (self.step_count) 命名。
-        这个函数中的 is_alive 对于己方单位，指的是单位是否存活，
-        对于敌方单位，指的是单位是否可观测到，is_alive 为零表示不可观测到或死亡。
-        
-        [MODIFIED] new_id 现在存储为 int 类型的序列号。
-        """
-
-        # 1. 如果未启用日志记录，则直接返回
-        if not self.enable_logging:
-            return
-
-        # 2. 初始化核心数据结构 (如果不存在)
-        # _entity_tag_map: 核心维护表 {tag: {name, id, new_id, ...}}
-        # 这一次，它将存储 *所有* 见过的单位，*不会* 删除已死亡的单位。
-        if not hasattr(self, '_entity_tag_map'):
-            self._entity_tag_map = {}
-
-        # _entity_new_id_counters: 追踪每种类型的下一个可用序列号
-        if not hasattr(self, '_entity_new_id_counters'):
-            self._entity_new_id_counters = {}
-            
-        # 3. 准备本帧的日志目录
-        if self.enable_logging:
-            # 确保 entity_id_name 子目录存在
-            self.entity_log_dir = os.path.join(self.log_path, "entity_id_name")
-            try:
-                os.makedirs(self.entity_log_dir, exist_ok=True)
-            except Exception as e:
-                self.logger.error(f"Failed to create entity_id_name directory: {e}")
-                self.enable_logging = False # 发生IO错误时停止日志记录
-                return
-
-        # 4. 辅助函数：处理一个实体列表
-        def process_entity_list(entity_list, alliance, entity_type, live_tags_set):
-            """
-            遍历一个单位列表 (如 self.units)，
-            将 tag 添加到 live_tags_set 中，
-            并为新单位在 _entity_tag_map 中创建条目。
-            """
-            for unit in entity_list:
-                try:
-                    tag = unit.tag
-                    
-                    # 将此 tag 标记为本帧存活
-                    live_tags_set.add(tag)
-
-                    # 如果是新单位，则创建条目
-                    if tag not in self._entity_tag_map:
-                        name = unit.name
-                        # 1. 获取 LLM simple_id
-                        simple_id = self.tag_to_id(tag)
-                        
-                        # 2. 生成 new_id
-                        counter_key = f"{alliance}_{entity_type}_{name}"
-                        next_seq_num = self._entity_new_id_counters.get(counter_key, 1)
-                        # new_id = f"{name}_{next_seq_num}" # <--- [OLD]
-                        new_id = next_seq_num # <--- [NEW]
-                        self._entity_new_id_counters[counter_key] = next_seq_num + 1
-
-                        # 3. 存入 _entity_tag_map
-                        # (存储 _alliance 和 _type 以便后续分组)
-                        self._entity_tag_map[tag] = {
-                            "name": name,
-                            "tag": tag,
-                            "id": simple_id,
-                            "new_id": new_id, # <--- [NEW] 存储为 int
-                            "_alliance": alliance,
-                            "_type": entity_type
-                        }
-                except Exception as e:
-                    self.logger.warning(f"Failed to process new entity {unit.tag} for ID logging: {e}")
-
-        # 5. 遍历所有当前存活的单位，更新 _entity_tag_map
-        current_live_tags = set()
-        process_entity_list(self.units, "allied", "units", current_live_tags)
-        process_entity_list(self.structures, "allied", "structures", current_live_tags)
-        process_entity_list(self.enemy_units, "enemy", "units", current_live_tags)
-        process_entity_list(self.enemy_structures, "enemy", "structures", current_live_tags)
-
-        # 6. 基于 _entity_tag_map 重建本帧的 entity_data
-        current_entity_data = {
-            "allied": {"units": {}, "structures": {}},
-            "enemy": {"units": {}, "structures": {}}
-        }
-
-        # 遍历 *所有* 见过的单位，并设置其 is_alive 状态
-        for tag, entity_info in self._entity_tag_map.items():
-            
-            # 判断存活状态
-            is_alive = 1 if tag in current_live_tags else 0
-            
-            # 准备要记录的条目
-            log_entry = {
-                "name": entity_info["name"],
-                "tag": entity_info["tag"],
-                "id": entity_info["id"],
-                "new_id": entity_info["new_id"],
-                "is_alive": is_alive  # <--- 新增的键
-            }
-
-            # 将条目放入 current_entity_data 的正确分组中
-            try:
-                alliance = entity_info["_alliance"]
-                entity_type = entity_info["_type"]
-                name = entity_info["name"]
-
-                name_group = current_entity_data[alliance][entity_type]
-                if name not in name_group:
-                    name_group[name] = []
-                
-                name_group[name].append(log_entry)
-            except KeyError as e:
-                self.logger.error(f"Failed to group entity {tag}. Data: {entity_info}. Error: {e}")
-
-
-        # 7. 排序 (按 new_id 的序列号排序)
-        def sort_by_new_id_number(entry):
-            try:
-                # return int(entry["new_id"].split('_')[-1]) # <--- [OLD]
-                return entry["new_id"] # <--- [NEW] 直接按 int 排序
-            except:
-                return 0
-            
-        for alliance in ["allied", "enemy"]:
-            for entity_type in ["units", "structures"]:
-                name_groups = current_entity_data[alliance][entity_type]
-                for name in name_groups:
-                    name_groups[name].sort(key=sort_by_new_id_number)
-
-        # 8. 将 *当前* 的数据赋给 self.entity_id_name
-        self.entity_id_name = current_entity_data
-
-        # 9. 将数据写入 *特定于本帧* 的JSON文件
-        if self.enable_logging:
-            
-            # 格式化文件名，例如：000120_entity_id_name.json
-            frame_file_name = f"{self.state.game_loop // 4}_entity_id_name.json"
-            file_path = os.path.join(self.entity_log_dir, frame_file_name)
-            
-            try:
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(self.entity_id_name, f, indent=4, ensure_ascii=False)
-            except Exception as e:
-                self.logger.error(f"Failed to write entity log to {file_path}: {e}")
-
-        # 10. 返回更新后的 self.entity_id_name
-        return self.entity_id_name
 
     ################ obs to text
     async def obs_to_text(self):
@@ -1066,6 +911,192 @@ class BasePlayer(BotAI):
         return "Closest vespene geysers: " + ", ".join(gases)
 
     ##### for sc2mm
+    # 记录所有我方和敌方的单位/建筑的名称、Tag和ID
+    def _record_entity_ids(self):
+        """
+        将所有(包括已死亡)我方和敌方的单位/建筑，以及地图资源 (矿、气) 的
+        名称、Tag、ID、new_id 和存活状态 (is_alive) 记录到 
+        self.entity_id_name 变量中。
+
+        同时，将此信息保存到 log_path/entity_id_name/ 文件夹下，
+        并以当前帧数 (self.step_count) 命名。
+        这个函数中的 is_alive 对于己方单位，指的是单位是否存活，
+        对于敌方单位，指的是单位是否可观测到，is_alive 为零表示不可观测到或死亡。
+        
+        [MODIFIED] new_id 现在存储为 int 类型的序列号。
+        [MODIFIED] 新增对 mineral_field 和 vespene_geyser 的追踪。
+        """
+
+        # 1. 如果未启用日志记录，则直接返回
+        if not self.enable_logging:
+            return
+
+        # 2. 初始化核心数据结构 (如果不存在)
+        # _entity_tag_map: 核心维护表 {tag: {name, id, new_id, ...}}
+        # 这一次，它将存储 *所有* 见过的单位，*不会* 删除已死亡的单位。
+        if not hasattr(self, '_entity_tag_map'):
+            self._entity_tag_map = {}
+
+        # _entity_new_id_counters: 追踪每种类型的下一个可用序列号
+        if not hasattr(self, '_entity_new_id_counters'):
+            self._entity_new_id_counters = {}
+            
+        # 3. 准备本帧的日志目录
+        if self.enable_logging:
+            # 确保 entity_id_name 子目录存在
+            self.entity_log_dir = os.path.join(self.log_path, "entity_id_name")
+            try:
+                os.makedirs(self.entity_log_dir, exist_ok=True)
+            except Exception as e:
+                self.logger.error(f"Failed to create entity_id_name directory: {e}")
+                self.enable_logging = False # 发生IO错误时停止日志记录
+                return
+
+        # 4. 辅助函数：处理一个实体列表
+        def process_entity_list(entity_list, alliance, entity_type, live_tags_set):
+            """
+            遍历一个单位列表 (如 self.units)，
+            将 tag 添加到 live_tags_set 中，
+            并为新单位在 _entity_tag_map 中创建条目。
+            """
+            for unit in entity_list:
+                try:
+                    tag = unit.tag
+                    
+                    # 将此 tag 标记为本帧存活
+                    live_tags_set.add(tag)
+
+                    # 如果是新单位，则创建条目
+                    if tag not in self._entity_tag_map:
+                        name = unit.name
+                        # 1. 获取 LLM simple_id
+                        simple_id = self.tag_to_id(tag)
+                        
+                        # 2. 生成 new_id
+                        counter_key = f"{alliance}_{entity_type}_{name}"
+                        next_seq_num = self._entity_new_id_counters.get(counter_key, 1)
+                        # new_id = f"{name}_{next_seq_num}" # <--- [OLD]
+                        new_id = next_seq_num # <--- [NEW]
+                        self._entity_new_id_counters[counter_key] = next_seq_num + 1
+
+                        # 3. 存入 _entity_tag_map
+                        # (存储 _alliance 和 _type 以便后续分组)
+                        self._entity_tag_map[tag] = {
+                            "name": name,
+                            "tag": tag,
+                            "id": simple_id,
+                            "new_id": new_id, # <--- [NEW] 存储为 int
+                            "_alliance": alliance,
+                            "_type": entity_type
+                        }
+                except Exception as e:
+                    self.logger.warning(f"Failed to process new entity {unit.tag} for ID logging: {e}")
+
+        # 5. 遍历所有当前存活的单位，更新 _entity_tag_map
+        current_live_tags = set()
+        process_entity_list(self.units, "allied", "units", current_live_tags)
+        process_entity_list(self.structures, "allied", "structures", current_live_tags)
+        process_entity_list(self.enemy_units, "enemy", "units", current_live_tags)
+        process_entity_list(self.enemy_structures, "enemy", "structures", current_live_tags)
+        
+        # --- [NEW] 新增对 mineral 和 gas 的处理 ---
+        # self.mineral_field 包含所有可见的晶体矿
+        process_entity_list(self.mineral_field, "neutral", "mineral", current_live_tags) 
+        # self.vespene_geyser 包含所有可见的气矿点 (无论上面是否有建筑)
+        process_entity_list(self.vespene_geyser, "neutral", "gas", current_live_tags)
+        # --- [END NEW] ---
+
+        # 6. 基于 _entity_tag_map 重建本帧的 entity_data
+        current_entity_data = {
+            "allied": {"units": {}, "structures": {}},
+            "enemy": {"units": {}, "structures": {}},
+            "mineral": {}, # <--- [NEW]
+            "gas": {}      # <--- [NEW]
+        }
+
+        # 遍历 *所有* 见过的单位，并设置其 is_alive 状态
+        for tag, entity_info in self._entity_tag_map.items():
+            
+            # 判断存活状态
+            is_alive = 1 if tag in current_live_tags else 0
+            
+            # 准备要记录的条目
+            log_entry = {
+                "name": entity_info["name"],
+                "tag": entity_info["tag"],
+                "id": entity_info["id"],
+                "new_id": entity_info["new_id"],
+                "is_alive": is_alive  # <--- 新增的键
+            }
+
+            # --- [MODIFIED] 将条目放入 current_entity_data 的正确分组中 ---
+            try:
+                alliance = entity_info["_alliance"]
+                entity_type = entity_info["_type"]
+                name = entity_info["name"]
+
+                name_group_container = None
+                # 路由到正确的容器
+                if alliance in ["allied", "enemy"]:
+                    name_group_container = current_entity_data[alliance][entity_type]
+                elif entity_type == "mineral": # 处理 'neutral' alliance, 'mineral' type
+                    name_group_container = current_entity_data["mineral"]
+                elif entity_type == "gas":     # 处理 'neutral' alliance, 'gas' type
+                    name_group_container = current_entity_data["gas"]
+                else:
+                    # 跳过其他不追踪的 'neutral' 类型
+                    continue 
+
+                # 将条目添加到其 name 对应的列表中
+                if name not in name_group_container:
+                    name_group_container[name] = []
+                
+                name_group_container[name].append(log_entry)
+                
+            except KeyError as e:
+                self.logger.error(f"Failed to group entity {tag}. Data: {entity_info}. Error: {e}")
+            # --- [END MODIFIED] ---
+
+
+        # 7. 排序 (按 new_id 的序列号排序)
+        def sort_by_new_id_number(entry):
+            try:
+                # return int(entry["new_id"].split('_')[-1]) # <--- [OLD]
+                return entry["new_id"] # <--- [NEW] 直接按 int 排序
+            except:
+                return 0
+            
+        for alliance in ["allied", "enemy"]:
+            for entity_type in ["units", "structures"]:
+                name_groups = current_entity_data[alliance][entity_type]
+                for name in name_groups:
+                    name_groups[name].sort(key=sort_by_new_id_number)
+
+        # --- [NEW] 新增对 mineral 和 gas 的排序 ---
+        for entity_type in ["mineral", "gas"]:
+            name_groups = current_entity_data[entity_type]
+            for name in name_groups:
+                name_groups[name].sort(key=sort_by_new_id_number)
+        # --- [END NEW] ---
+
+        # 8. 将 *当前* 的数据赋给 self.entity_id_name
+        self.entity_id_name = current_entity_data
+
+        # 9. 将数据写入 *特定于本帧* 的JSON文件
+        if self.enable_logging:
+            
+            # 格式化文件名，例如：000120_entity_id_name.json
+            frame_file_name = f"{self.state.game_loop // 4}_entity_id_name.json"
+            file_path = os.path.join(self.entity_log_dir, frame_file_name)
+            
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(self.entity_id_name, f, indent=4, ensure_ascii=False)
+            except Exception as e:
+                self.logger.error(f"Failed to write entity log to {file_path}: {e}")
+
+        # 10. 返回更新后的 self.entity_id_name
+        return self.entity_id_name
     def tag_to_id_new(self, tag: int):
             """
             通用化版本：
