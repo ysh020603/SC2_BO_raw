@@ -1,10 +1,51 @@
+# format_prompt = """
+# ```
+# [
+#     {
+#         "action": "<action_name>",
+#         "units": [<unit_id>, <unit_id>, ...], # units you want to command
+#         "target_unit" (optional): <unit_id>, # some existing unit
+#         "target_position" (optional): [x, y]
+#     },
+#     // more actions ...
+# ]
+# ```
+
+# Example:
+# ```
+# [
+#     {
+#         "action": "ATTACK_ATTACK",
+#         "units": [1, 2, 3],
+#         "target_unit": 9
+#     },
+#     {
+#         "action": "MOVE_MOVE",
+#         "units": [4, 5],
+#         "target_position": [50, 60]
+#     },
+#     {
+#         "action": "COMMANDCENTERTRAIN_SCV",
+#         "units": [6]
+#     }
+# ]
+# ```
+# """.strip()
+
 format_prompt = """
 ```
 [
     {
         "action": "<action_name>",
-        "units": [<unit_id>, <unit_id>, ...], # units you want to command
-        "target_unit" (optional): <unit_id>, # some existing unit
+        "units": [
+            {
+                "name": "<unit_name>",
+                "ids": [<id>, <id>, ...],
+            }, ...], # units you want to command
+        "target_unit" (optional):  {
+                "name": "<unit_name>",
+                "ids": [<id>, <id>, ...], 
+            }, # some existing unit
         "target_position" (optional): [x, y]
     },
     // more actions ...
@@ -16,17 +57,35 @@ Example:
 [
     {
         "action": "ATTACK_ATTACK",
-        "units": [1, 2, 3],
-        "target_unit": 9
+        "units": [
+            {
+                "name": "marine",
+                "ids": [1, 2, 3]
+            }
+        ],
+        "target_unit": {
+            "name": "SCV",
+            "ids": [9]
+        }
     },
     {
         "action": "MOVE_MOVE",
-        "units": [4, 5],
+        "units": [
+            {
+                "name": "marine",
+                "ids": [4, 5]
+            }
+        ],
         "target_position": [50, 60]
     },
     {
         "action": "COMMANDCENTERTRAIN_SCV",
-        "units": [6]
+        "units": [
+            {
+                "name": "CommandCenter",
+                "ids": [6]
+            }
+        ]
     }
 ]
 ```
