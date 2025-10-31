@@ -498,7 +498,7 @@ class BasePlayer(BotAI):
             else:
                 unitID_list = []
                 for structure in self.enemy_structures:
-                    unitID = self.tag_to_id(structure.tag)
+                    unitID = self.tag_to_id_new(structure.tag)
                     unitID_list.append(unitID)
 
                 if key in unitID_list:
@@ -507,7 +507,7 @@ class BasePlayer(BotAI):
                     print(f"{enemy_struct['name']} destroyed.")
         
         for structure in self.enemy_structures:
-            unitID = self.tag_to_id(structure.tag)
+            unitID = self.tag_to_id_new(structure.tag)
             if unitID not in new_enemy_locations.keys():
                 new_enemy_locations[unitID] = {
                     'name': structure.name,
@@ -827,14 +827,14 @@ class BasePlayer(BotAI):
             for label in set(labels):
                 cluster_units = [units[i] for i in range(len(units)) if labels[i] == label]
                 if label != -1:
-                    ids = [self.tag_to_id(unit.tag) for unit in cluster_units]
+                    ids = [self.tag_to_id_new(unit.tag) for unit in cluster_units]
                     ids = ", ".join(map(str, ids))
                     cluster_center = tuple(centers[label])
                     text = f"[{ids}]{battle_type}\nGroup Center: {tuple([int(p) for p in cluster_center])}\nState: {type_name}"
                     units_text.append(text)
                 else:     # all single unit(label == -1)
                     for unit in cluster_units:
-                        id = self.tag_to_id(unit.tag)
+                        id = self.tag_to_id_new(unit.tag)
                         position = unit.position_tuple
                         text = f"[{id}]{battle_type}\nPosition: {tuple([int(p) for p in position])}\nState: {type_name}"
                         units_text.append(text)
@@ -852,7 +852,7 @@ class BasePlayer(BotAI):
             not_mining_judge = lambda unit: not (unit.name == mining_type and unit.is_mine and not (unit.is_constructing_scv or unit.is_repairing or unit.is_attacking))
             mining_units = other_units.filter(mining_judge)
             if len(mining_units) > 0:
-                mining_ids = [self.tag_to_id(unit.tag) for unit in mining_units]
+                mining_ids = [self.tag_to_id_new(unit.tag) for unit in mining_units]
                 mining_ids = ", ".join(map(str, mining_ids))
                 mining_text = f"[{mining_ids}]{mining_type}\nState: collecting resources automatically"
                 units_text.append(mining_text)
@@ -862,7 +862,7 @@ class BasePlayer(BotAI):
             not_attacking_judge = lambda unit: not (unit.name == mining_type and unit.is_mine and unit.is_attacking)
             attacking_units = other_units.filter(attacking_judge)
             if len(attacking_units) > 0:
-                attacking_ids = [self.tag_to_id(unit.tag) for unit in attacking_units]
+                attacking_ids = [self.tag_to_id_new(unit.tag) for unit in attacking_units]
                 attacking_ids = ", ".join(map(str, attacking_ids))
                 attacking_text = f"[{attacking_ids}]{mining_type}\nState: attacking enemies automatically"
                 units_text.append(attacking_text)
@@ -911,9 +911,9 @@ class BasePlayer(BotAI):
         text = ""
 
         if unit.build_progress == 1.0:
-            text += f"[{self.tag_to_id(unit.tag)}]{unit.name}\n"
+            text += f"[{self.tag_to_id_new(unit.tag)}]{unit.name}\n"
         else:
-            text += f"[{self.tag_to_id(unit.tag)}]{unit.name}(building {int(unit.build_progress * 100)}%)\n"
+            text += f"[{self.tag_to_id_new(unit.tag)}]{unit.name}(building {int(unit.build_progress * 100)}%)\n"
         text += f"Position: ({int(unit.position.x)}, {int(unit.position.y)})\n"
 
         if unit.build_progress == 1.0:
@@ -971,12 +971,12 @@ class BasePlayer(BotAI):
             if unit.name in self.miner_units:
                 ability_names = [name for name in ability_names if name not in ["MOVE_MOVE", "ATTACK_ATTACK"]]
             ability_names = [name for name in ability_names if TerranAbility[name].get("enabled", False)]
-            self._id_to_abilities[self.tag_to_id(unit.tag)] = ability_names
+            self._id_to_abilities[self.tag_to_id_new(unit.tag)] = ability_names
             
             unit_hash = unit.name + "|" + ", ".join(ability_names)
             if unit_hash not in unit_hash_table:
                 unit_hash_table[unit_hash] = []
-            unit_hash_table[unit_hash].append(str(self.tag_to_id(unit.tag)))
+            unit_hash_table[unit_hash].append(str(self.tag_to_id_new(unit.tag)))
             
         text = ""
         for unit_hash, ids in unit_hash_table.items():
@@ -1000,7 +1000,7 @@ class BasePlayer(BotAI):
                 target_unit = self.get_unit_by_tag(order_target)
                 if target_unit:
                     order_target_name = self.get_unit_by_tag(order_target).name
-                    order_target = self.tag_to_id(order_target)
+                    order_target = self.tag_to_id_new(order_target)
 
         states = []
         if unit.is_moving:
@@ -1046,7 +1046,7 @@ class BasePlayer(BotAI):
         cloest_miners = [mineral for mineral in cloest_miners if mineral.mineral_contents > 0]
         cloest_miners = cloest_miners[: 2 * num_SCV]
         for mineral in cloest_miners:
-            miners.append(f"[{self.tag_to_id(mineral.tag)}]({int(mineral.position.x)}, {int(mineral.position.y)})")
+            miners.append(f"[{self.tag_to_id_new(mineral.tag)}]({int(mineral.position.x)}, {int(mineral.position.y)})")
         if len(miners) == 0:
             return "No mineral fields found"
         return "Closest mineral fields: " + ", ".join(miners)
@@ -1060,7 +1060,67 @@ class BasePlayer(BotAI):
             # # if there is a structure on the position, ignore it
             # if self.structures.closer_than(0.5, gas.position):
             #     continue
-            gases.append(f"[{self.tag_to_id(gas.tag)}]({int(gas.position.x)}, {int(gas.position.y)})")
+            gases.append(f"[{self.tag_to_id_new(gas.tag)}]({int(gas.position.x)}, {int(gas.position.y)})")
         if len(gases) == 0:
             return "No vespene geysers found"
         return "Closest vespene geysers: " + ", ".join(gases)
+
+    ##### for sc2mm
+    def tag_to_id_new(self, tag: int):
+            """
+            通用化版本：
+            递归遍历 self.entity_id_name (任意嵌套结构),
+            收集所有包含 "tag" 键的字典,
+            然后在收集中查找匹配的 "tag" 并返回对应的 "new_id"。
+            (根据您的请求修改)
+            """
+            
+            # 1. 用于存储所有找到的包含 "tag" 键的字典
+            all_tagged_items = []
+
+            def find_items_recursive(data_structure):
+                """
+                递归助手函数，用于遍历数据结构并填充 all_tagged_items 列表。
+                """
+                
+                # --- 情况 A: 如果当前数据是字典 (dict) ---
+                if isinstance(data_structure, dict):
+                    
+                    # 检查当前字典是否直接包含 "tag" 键
+                    if "tag" in data_structure:
+                        # 如果是，将这个字典（元素）添加到收集中
+                        all_tagged_items.append(data_structure)
+                    
+                    # 无论是否包含 "tag"，都必须继续递归遍历它的 *值*
+                    for value in data_structure.values():
+                        find_items_recursive(value)
+                
+                # --- 情况 B: 如果当前数据是列表 (list) 或 元组 (tuple) ---
+                elif isinstance(data_structure, (list, tuple)):
+                    
+                    # 递归遍历列表中的 *每个元素*
+                    for item in data_structure:
+                        find_items_recursive(item)
+                
+                # --- 情况 C: 其他类型 (int, str, None...) ---
+                # 基本类型，停止递归
+                else:
+                    pass
+
+            # --- 函数主逻辑 ---
+            
+            # 2. 从 self.entity_id_name 的顶层开始递归查找
+            find_items_recursive(self.entity_id_name)
+            
+            # 3. 遍历收集到的所有包含 "tag" 键的元素
+            for item in all_tagged_items:
+                
+                # 检查 "tag" 的值是否与我们寻找的 tag 相匹配
+                if item.get("tag") == tag:
+                    
+                    # 找到匹配项，返回对应的 "new_id"
+                    return item.get("new_id")
+
+            # 4. 如果遍历完整个列表都没有找到匹配项，则返回 None
+            # (如果您的代码期望一个整数，您可以返回 -1 或 0)
+            return None
